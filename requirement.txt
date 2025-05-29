@@ -1,0 +1,11 @@
+create a springboot application which run a sql query in database and save result in a csv file
+
+databse details are available in a external cofig file 
+
+query is also in a config file
+
+it should take a csv input to form a dynamic qury , commam seperated single or multiple values 
+
+output fie and input file location should be in config file,
+
+it should be take a number from config file to how many thread can run parallels
