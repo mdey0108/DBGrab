@@ -58,13 +58,16 @@ public class QueryService {
         processQuery();
     }
 
+    int corePoolSize;
+
     public void processQuery() {
         try {
             // Read input CSV - now returns List<List<String>> instead of List<String>
             List<List<String>> inputValues = readInputCsv();
 
             // Better batch size calculation with null check
-            int corePoolSize = 1;
+            // int corePoolSize = 1;
+
             if (taskExecutor instanceof org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor) {
                 corePoolSize = ((org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor) taskExecutor)
                         .getCorePoolSize();
