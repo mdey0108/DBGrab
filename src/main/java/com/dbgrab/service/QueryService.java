@@ -54,6 +54,7 @@ public class QueryService {
         Files.createDirectories(Paths.get(outputFilePath).getParent());
 
         // Start processing
+        log.debug("Executing query....");
         processQuery();
     }
 
@@ -110,7 +111,7 @@ public class QueryService {
             // Prepare query with proper parameterization for each condition
             String formattedQuery = formatQueryWithConditions(sqlQuery, row.size());
 
-            log.debug("Executing query with {} parameters", row.size());
+            // log.debug("Executing query with {} parameters", row.size());
 
             jdbcTemplate.query(
                     formattedQuery,
