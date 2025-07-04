@@ -85,17 +85,14 @@ public class QueryService {
                 futures.add(processQueryBatch(batch));
             }
 
-            // Combine results and write to CSV with better error handling
+            // Wait for all futures to complete in parallel
+            CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            allDone.get(); // Wait for all
+
+            // Combine results after all batches are done
             List<String[]> allResults = new ArrayList<>();
             for (CompletableFuture<List<String[]>> future : futures) {
-                try {
-                    allResults.addAll(future.get());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Query processing was interrupted", e);
-                } catch (ExecutionException e) {
-                    throw new RuntimeException("Error processing query batch", e.getCause());
-                }
+                allResults.addAll(future.get());
             }
 
             writeToCsv(allResults);
