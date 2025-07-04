@@ -114,7 +114,7 @@ public class QueryService {
             // Prepare query with proper parameterization for each condition
             String formattedQuery = formatQueryWithConditions(sqlQuery, row.size());
 
-            // log.debug("Executing query with {} parameters", row.size());
+            log.debug("Executing query with {} parameters", row.size());
 
             jdbcTemplate.query(
                     formattedQuery,
