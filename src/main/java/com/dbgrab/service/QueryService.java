@@ -60,12 +60,13 @@ public class QueryService {
 
     int corePoolSize;
 
-    private final Object csvWriteLock = new Object();
-    private volatile boolean headerWritten = false;
-
     public void processQuery() {
         try {
+            // Read input CSV - now returns List<List<String>> instead of List<String>
             List<List<String>> inputValues = readInputCsv();
+
+            // Better batch size calculation with null check
+            // int corePoolSize = 1;
 
             if (taskExecutor instanceof org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor) {
                 corePoolSize = ((org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor) taskExecutor)
@@ -73,67 +74,32 @@ public class QueryService {
             }
             int batchSize = Math.max(1, inputValues.size() / corePoolSize);
 
+            // Create batches of input rows
             List<List<List<String>>> batches = new ArrayList<>();
             for (int i = 0; i < inputValues.size(); i += batchSize) {
                 batches.add(inputValues.subList(i, Math.min(i + batchSize, inputValues.size())));
             }
 
-            Path path = Paths.get(outputFilePath);
-            // Open CSVWriter once for all batches
-            try (CSVWriter writer = new CSVWriter(Files.newBufferedWriter(path))) {
-                List<CompletableFuture<Void>> futures = new ArrayList<>();
-                for (List<List<String>> batch : batches) {
-                    futures.add(CompletableFuture.runAsync(() -> processAndWriteBatch(batch, writer), taskExecutor));
-                }
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+            List<CompletableFuture<List<String[]>>> futures = new ArrayList<>();
+            for (List<List<String>> batch : batches) {
+                futures.add(processQueryBatch(batch));
             }
+
+            // Wait for all futures to complete in parallel
+            CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            allDone.get(); // Wait for all
+
+            // Combine results after all batches are done
+            List<String[]> allResults = new ArrayList<>();
+            for (CompletableFuture<List<String[]>> future : futures) {
+                allResults.addAll(future.get());
+            }
+
+            writeToCsv(allResults);
 
             log.info("Query processing completed successfully. Results written to {}", outputFilePath);
         } catch (Exception e) {
             log.error("Error processing query", e);
-        }
-    }
-
-    // New method to process and write a batch
-    private void processAndWriteBatch(List<List<String>> inputRows, CSVWriter writer) {
-        List<String[]> batchResults = new ArrayList<>();
-        for (List<String> row : inputRows) {
-            String formattedQuery = formatQueryWithConditions(sqlQuery, row.size());
-            jdbcTemplate.query(
-                    formattedQuery,
-                    row.toArray(),
-                    rs -> {
-                        int columnCount = rs.getMetaData().getColumnCount();
-                        // Add header row if not written yet
-                        if (!headerWritten) {
-                            synchronized (csvWriteLock) {
-                                if (!headerWritten) {
-                                    String[] headers = new String[columnCount];
-                                    for (int i = 1; i <= columnCount; i++) {
-                                        headers[i - 1] = rs.getMetaData().getColumnName(i);
-                                    }
-                                    writer.writeNext(headers);
-                                    headerWritten = true;
-                                }
-                            }
-                        }
-                        // Add data row
-                        String[] dataRow = new String[columnCount];
-                        for (int i = 1; i <= columnCount; i++) {
-                            dataRow[i - 1] = rs.getString(i);
-                        }
-                        synchronized (csvWriteLock) {
-                            writer.writeNext(dataRow);
-                        }
-                    });
-        }
-        // Flush after each batch
-        synchronized (csvWriteLock) {
-            try {
-                writer.flush();
-            } catch (IOException e) {
-                log.error("Error flushing CSVWriter", e);
-            }
         }
     }
 
@@ -173,43 +139,6 @@ public class QueryService {
         }
 
         return CompletableFuture.completedFuture(allResults);
-    }
-
-    private List<String[]> processQueryBatchSync(List<List<String>> inputRows) {
-        log.info("Processing batch on thread: {}", Thread.currentThread().getName());
-        List<String[]> allResults = new ArrayList<>();
-
-        for (List<String> row : inputRows) {
-            // Prepare query with proper parameterization for each condition
-            String formattedQuery = formatQueryWithConditions(sqlQuery, row.size());
-
-            log.debug("Executing query with {} parameters", row.size());
-
-            jdbcTemplate.query(
-                    formattedQuery,
-                    row.toArray(),
-                    rs -> {
-                        int columnCount = rs.getMetaData().getColumnCount();
-
-                        // Add header row if this is the first result
-                        if (allResults.isEmpty()) {
-                            String[] headers = new String[columnCount];
-                            for (int i = 1; i <= columnCount; i++) {
-                                headers[i - 1] = rs.getMetaData().getColumnName(i);
-                            }
-                            allResults.add(headers);
-                        }
-
-                        // Add data row
-                        String[] dataRow = new String[columnCount];
-                        for (int i = 1; i <= columnCount; i++) {
-                            dataRow[i - 1] = rs.getString(i);
-                        }
-                        allResults.add(dataRow);
-                    });
-        }
-
-        return allResults;
     }
 
     private String formatQueryWithConditions(String originalQuery, int paramCount) {
